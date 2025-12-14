@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "predeploy": "vite build --base=/FusionTools/",
+    "deploy": "gh-pages -d dist"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",

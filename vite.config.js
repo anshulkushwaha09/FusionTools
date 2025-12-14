@@ -53,12 +53,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   process.env = { ...process.env, ...env } // Merge into process.env for the handler usage
 
-  // Determine base path: Netlify uses root '/', GitHub Pages uses repo name '/FusionTools/'
-  const isNetlify = process.env.NETLIFY === 'true';
-  const base = isNetlify ? '/' : '/FusionTools/';
-
   return {
-    base: base,
     plugins: [react(), netlifyFunctionProxy()],
   }
 })

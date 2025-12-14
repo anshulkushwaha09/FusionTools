@@ -18,25 +18,77 @@ const MODELS = {
 let currentProviderIndex = 0;
 const providerList = [PROVIDERS.GROQ, PROVIDERS.GEMINI, PROVIDERS.OPENROUTER, PROVIDERS.DEEPSEEK, PROVIDERS.HUGGINGFACE];
 
-// Function to call the backend proxy
-const callProxy = async (provider, messages, model) => {
-    const response = await fetch("/.netlify/functions/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            provider,
-            model: model || MODELS[provider.toUpperCase()],
-            messages
-        })
+// Direct Client-Side Call (For GitHub Pages / Local)
+import Groq from "groq-sdk";
+
+const callDirectGroq = async (messages, model) => {
+    const key = import.meta.env.VITE_GROQ_API_KEY;
+    if (!key) throw new Error("VITE_GROQ_API_KEY not found. Add it to .env for local/GitHub Pages.");
+    
+    const groq = new Groq({ apiKey: key, dangerouslyAllowBrowser: true });
+    
+    // Convert system/user messages to Groq format
+    // Simple filter to ensure valid roles if needed
+    const completion = await groq.chat.completions.create({
+        messages: messages,
+        model: model || MODELS.GROQ,
     });
 
-    if (!response.ok) {
-        throw new Error(`Provider ${provider} failed: ${response.statusText}`);
+    return completion.choices[0]?.message?.content || "";
+};
+
+// Function to call the backend proxy or fallback to direct
+const callProxy = async (provider, messages, model) => {
+    const body = JSON.stringify({
+        provider,
+        model: model || MODELS[provider.toUpperCase()],
+        messages
+    });
+    
+    // 1. Try Netlify Function
+    try {
+        const response = await fetch("/.netlify/functions/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: body
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            return data.choices?.[0]?.message?.content || data.generated_text || "";
+        }
+        
+        // If not 404/405 (e.g. 500), throw real error
+        if (response.status !== 404 && response.status !== 405) {
+             throw new Error(`Netlify Provider ${provider} failed: ${response.statusText}`);
+        }
+    } catch (e) {
+        // Ignore network errors here to try next method
     }
 
-    const data = await response.json();
-    // Normalize response content
-    return data.choices?.[0]?.message?.content || data.generated_text || "";
+    // 2. Try Vercel Function
+    try {
+        const response = await fetch("/api/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: body
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            return data.choices?.[0]?.message?.content || data.generated_text || "";
+        }
+
+        if (response.status !== 404 && response.status !== 405) {
+             throw new Error(`Vercel Provider ${provider} failed: ${response.statusText}`);
+        }
+    } catch (e) {
+        // Ignore network errors here to try next method
+    }
+
+    // 3. Fallback to Client-Side (GitHub Pages)
+    console.warn("Backends unreachable. Falling back to client-side Groq.");
+    return await callDirectGroq(messages, model);
 };
 
 // Main Engine Function
